@@ -1,0 +1,5 @@
+[theme]
+base="dark" # Pode ser "light" ou "dark"
+primaryColor="#1f77b4" # Cor principal
+backgroundColor="#f0f2f6" # Cor de fundo
+textColor="#000000" # Cor do texto

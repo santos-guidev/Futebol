@@ -1,14 +1,16 @@
 import pandas as pd
 import streamlit as st
-import matplotlib.pyplot as plt
-import seaborn as sns
+import plotly.express as px
+import plotly.graph_objects as go
+from textblob import TextBlob
+import requests
 
 # Constants
 TEST_SIZE = 0.3
 RANDOM_STATE = 42
 
 # Load data from URL
-@st.cache
+@st.cache_data
 def load_data(url):
     """Carrega e retorna dados de um arquivo Excel da URL fornecida."""
     try:
@@ -112,88 +114,85 @@ def check_columns(data):
 
 def plot_stats(home_team, away_team, home_away_stats, away_away_stats, avg_odds, odds_over_under, data):
     """Plota gráficos das estatísticas."""
-    fig, ax = plt.subplots(3, 2, figsize=(20, 18))
-    
     # Estatísticas Casa
     home_away_df = pd.DataFrame(home_away_stats['home'], index=[home_team])
-    home_away_df.T.plot(kind='bar', ax=ax[0, 0], color=['blue', 'red'])
-    ax[0, 0].set_title(f'Estatísticas de {home_team} como Mandante')
-    ax[0, 0].set_ylabel('Quantidade')
-    ax[0, 0].tick_params(axis='x', rotation=45)
-
+    fig_home = px.bar(home_away_df.T, title=f'Estatísticas de {home_team} como Mandante', labels={'index': 'Stat', 'value': 'Quantity'})
+    
     # Estatísticas Fora
     away_away_df = pd.DataFrame(away_away_stats['away'], index=[away_team])
-    away_away_df.T.plot(kind='bar', ax=ax[0, 1], color=['blue', 'red'])
-    ax[0, 1].set_title(f'Estatísticas de {away_team} como Visitante')
-    ax[0, 1].set_ylabel('Quantidade')
-    ax[0, 1].tick_params(axis='x', rotation=45)
-
+    fig_away = px.bar(away_away_df.T, title=f'Estatísticas de {away_team} como Visitante', labels={'index': 'Stat', 'value': 'Quantity'})
+    
     # Odds Médias
     odds_df = pd.DataFrame(list(avg_odds.items()), columns=['Outcome', 'Average Odds'])
-    sns.barplot(x='Outcome', y='Average Odds', data=odds_df, ax=ax[1, 0], palette='viridis')
-    ax[1, 0].set_title('Odds Médias')
-    ax[1, 0].set_ylabel('Odds')
+    fig_odds = px.bar(odds_df, x='Outcome', y='Average Odds', title='Odds Médias')
     
     # Odds Over/Under
     odds_over_under_df = pd.DataFrame(list(odds_over_under.items()), columns=['Type', 'Average Odds'])
-    sns.barplot(x='Type', y='Average Odds', data=odds_over_under_df, ax=ax[1, 1], palette='viridis')
-    ax[1, 1].set_title('Odds Over/Under')
-    ax[1, 1].set_ylabel('Odds')
+    fig_odds_over_under = px.bar(odds_over_under_df, x='Type', y='Average Odds', title='Odds Over/Under')
 
     # Chutes e Cantos
     if all(col in data.columns for col in ['ShotsOnTarget_H', 'ShotsOnTarget_A', 'ShotsOffTarget_H', 'ShotsOffTarget_A', 'Corners_H_FT', 'Corners_A_FT']):
-        fig_shots_corners, ax_shots_corners = plt.subplots(2, 2, figsize=(15, 10))
+        shots_on_target = data[['ShotsOnTarget_H', 'ShotsOnTarget_A']].mean().reset_index()
+        shots_on_target.columns = ['Type', 'Average Shots on Target']
+        fig_shots_on_target = px.bar(shots_on_target, x='Type', y='Average Shots on Target', title='Chutes no Alvo')
         
-        # Chutes no Alvo
-        data[['ShotsOnTarget_H', 'ShotsOnTarget_A']].mean().plot(kind='bar', ax=ax_shots_corners[0, 0])
-        ax_shots_corners[0, 0].set_title('Chutes no Alvo')
+        shots_off_target = data[['ShotsOffTarget_H', 'ShotsOffTarget_A']].mean().reset_index()
+        shots_off_target.columns = ['Type', 'Average Shots off Target']
+        fig_shots_off_target = px.bar(shots_off_target, x='Type', y='Average Shots off Target', title='Chutes Fora do Alvo')
         
-        # Chutes Fora do Alvo
-        data[['ShotsOffTarget_H', 'ShotsOffTarget_A']].mean().plot(kind='bar', ax=ax_shots_corners[0, 1])
-        ax_shots_corners[0, 1].set_title('Chutes Fora do Alvo')
-        
-        # Cantos
-        data[['Corners_H_FT', 'Corners_A_FT']].mean().plot(kind='bar', ax=ax_shots_corners[1, 0])
-        ax_shots_corners[1, 0].set_title('Cantos')
+        corners = data[['Corners_H_FT', 'Corners_A_FT']].mean().reset_index()
+        corners.columns = ['Type', 'Average Corners']
+        fig_corners = px.bar(corners, x='Type', y='Average Corners', title='Cantos')
+
+    # Exibição dos Gráficos
+    st.plotly_chart(fig_home)
+    st.plotly_chart(fig_away)
+    st.plotly_chart(fig_odds)
+    st.plotly_chart(fig_odds_over_under)
     
-    st.pyplot(fig)
-    if 'fig_shots_corners' in locals():
-        st.pyplot(fig_shots_corners)
+    if 'fig_shots_on_target' in locals():
+        st.plotly_chart(fig_shots_on_target)
+        st.plotly_chart(fig_shots_off_target)
+        st.plotly_chart(fig_corners)
+
+def analyze_sentiment(text):
+    """Analisa o sentimento do texto usando TextBlob."""
+    analysis = TextBlob(text)
+    if analysis.sentiment.polarity > 0:
+        return "Positivo"
+    elif analysis.sentiment.polarity == 0:
+        return "Neutro"
+    else:
+        return "Negativo"
 
 def main():
-    st.sidebar.title("Análise de Dados Esportivos")
+    st.title("Análise de Dados de Futebol")
     
-    # Seleção da Fonte de Dados
-    source = st.sidebar.selectbox("Escolha o Banco de Dados", options=DATA_SOURCES.keys())
-    data_url = DATA_SOURCES[source]
+    # Seleção de banco de dados
+    selected_data_source = st.selectbox("Selecione o banco de dados", list(DATA_SOURCES.keys()))
+    data_url = DATA_SOURCES[selected_data_source]
     data = load_data(data_url)
     
     if data is not None and check_columns(data):
-        # Seleção dos Times
-        home_team = st.sidebar.selectbox("Escolha o Time da Casa", options=data['Home'].unique())
-        away_team = st.sidebar.selectbox("Escolha o Time Visitante", options=data['Away'].unique())
+        # Seleção de times
+        team1 = st.selectbox("Selecione o time da Casa", data['Home'].unique())
+        team2 = st.selectbox("Selecione o time Visitante", data['Away'].unique())
         
-        st.title(f"Análise de {home_team} vs {away_team}")
-        
-        # Estatísticas dos Últimos Jogos
-        recent_stats_home = get_recent_stats(home_team, data)
-        recent_stats_away = get_recent_stats(away_team, data)
-        
-        st.subheader(f"Estatísticas dos Últimos 5 Jogos de {home_team}")
-        st.write(recent_stats_home)
-        
-        st.subheader(f"Estatísticas dos Últimos 5 Jogos de {away_team}")
-        st.write(recent_stats_away)
-        
-        # Estatísticas de Desempenho
-        home_away_stats = get_home_away_stats(home_team, data)
-        away_away_stats = get_home_away_stats(away_team, data)
-        
-        # Odds
-        avg_odds, odds_over_under = calculate_average_odds(data)
-        
-        # Plotagem
-        plot_stats(home_team, away_team, home_away_stats, away_away_stats, avg_odds, odds_over_under, data)
+        if team1 and team2:
+            home_away_stats = get_home_away_stats(team1, data)
+            away_away_stats = get_home_away_stats(team2, data)
+            avg_odds, odds_over_under = calculate_average_odds(data)
+            
+            # Exibição das Estatísticas
+            st.subheader(f"Estatísticas Recentes dos Últimos 5 Jogos de {team1}")
+            recent_stats_team1 = get_recent_stats(team1, data)
+            st.write(recent_stats_team1)
+            
+            st.subheader(f"Estatísticas Recentes dos Últimos 5 Jogos de {team2}")
+            recent_stats_team2 = get_recent_stats(team2, data)
+            st.write(recent_stats_team2)
+            
+            plot_stats(team1, team2, home_away_stats, away_away_stats, avg_odds, odds_over_under, data)
 
 if __name__ == "__main__":
     main()
