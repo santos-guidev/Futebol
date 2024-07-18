@@ -2,8 +2,6 @@ import pandas as pd
 import streamlit as st
 import plotly.express as px
 import plotly.graph_objects as go
-from textblob import TextBlob
-import requests
 
 # Constants
 TEST_SIZE = 0.3
@@ -33,7 +31,7 @@ def get_recent_stats(team, data):
     recent_stats = recent_matches[['Date', 'Home', 'Away', 'Goals_H_FT', 'Goals_A_FT', 'ShotsOnTarget_H', 'ShotsOnTarget_A', 'ShotsOffTarget_H', 'ShotsOffTarget_A', 'Corners_H_FT', 'Corners_A_FT']]
     return recent_stats
 
-def get_home_away_stats(team, data):
+def get_team_stats(team, data):
     """Obtém estatísticas de desempenho em casa e fora."""
     home_stats = data[data['Home'] == team].agg({
         'Goals_H_FT': ['mean', 'sum'],
@@ -112,15 +110,16 @@ def check_columns(data):
         return False
     return True
 
-def plot_stats(home_team, away_team, home_away_stats, away_away_stats, avg_odds, odds_over_under, data):
-    """Plota gráficos das estatísticas."""
+def plot_stats(home_team, away_team, home_team_stats, away_team_stats, avg_odds, odds_over_under, data):
+    """Plota gráficos das estatísticas para duas equipes."""
+    
     # Estatísticas Casa
-    home_away_df = pd.DataFrame(home_away_stats['home'], index=[home_team])
-    fig_home = px.bar(home_away_df.T, title=f'Estatísticas de {home_team} como Mandante', labels={'index': 'Stat', 'value': 'Quantity'})
+    home_stats_df = pd.DataFrame(home_team_stats['home'], index=[home_team])
+    fig_home = px.bar(home_stats_df.T, title=f'Estatísticas de {home_team} como Mandante', labels={'index': 'Stat', 'value': 'Quantity'})
     
     # Estatísticas Fora
-    away_away_df = pd.DataFrame(away_away_stats['away'], index=[away_team])
-    fig_away = px.bar(away_away_df.T, title=f'Estatísticas de {away_team} como Visitante', labels={'index': 'Stat', 'value': 'Quantity'})
+    away_stats_df = pd.DataFrame(away_team_stats['away'], index=[away_team])
+    fig_away = px.bar(away_stats_df.T, title=f'Estatísticas de {away_team} como Visitante', labels={'index': 'Stat', 'value': 'Quantity'})
     
     # Odds Médias
     odds_df = pd.DataFrame(list(avg_odds.items()), columns=['Outcome', 'Average Odds'])
@@ -155,44 +154,56 @@ def plot_stats(home_team, away_team, home_away_stats, away_away_stats, avg_odds,
         st.plotly_chart(fig_shots_off_target)
         st.plotly_chart(fig_corners)
 
-def analyze_sentiment(text):
-    """Analisa o sentimento do texto usando TextBlob."""
-    analysis = TextBlob(text)
-    if analysis.sentiment.polarity > 0:
-        return "Positivo"
-    elif analysis.sentiment.polarity == 0:
-        return "Neutro"
-    else:
-        return "Negativo"
-
+# Streamlit UI
 def main():
-    st.title("Análise de Dados de Futebol")
-    
-    # Seleção de banco de dados
-    selected_data_source = st.selectbox("Selecione o banco de dados", list(DATA_SOURCES.keys()))
-    data_url = DATA_SOURCES[selected_data_source]
-    data = load_data(data_url)
-    
-    if data is not None and check_columns(data):
-        # Seleção de times
-        team1 = st.selectbox("Selecione o time da Casa", data['Home'].unique())
-        team2 = st.selectbox("Selecione o time Visitante", data['Away'].unique())
+    st.title("Análise de Jogos de Futebol")
+
+    # Menu Lateral
+    menu = st.sidebar.selectbox(
+        "Escolha uma seção",
+        ["Estatísticas", "Análise de Sentimentos", "Previsão de Partidas"]
+    )
+
+    if menu == "Estatísticas":
+        st.subheader("Análise de Estatísticas")
+
+        # Escolha do banco de dados
+        selected_db = st.sidebar.selectbox("Escolha o banco de dados", list(DATA_SOURCES.keys()))
+        url = DATA_SOURCES[selected_db]
+        data = load_data(url)
         
-        if team1 and team2:
-            home_away_stats = get_home_away_stats(team1, data)
-            away_away_stats = get_home_away_stats(team2, data)
-            avg_odds, odds_over_under = calculate_average_odds(data)
+        if data is not None and check_columns(data):
+            team1 = st.sidebar.selectbox("Escolha o time 1", pd.concat([data['Home'], data['Away']]).unique())
+            team2 = st.sidebar.selectbox("Escolha o time 2", pd.concat([data['Home'], data['Away']]).unique())
             
-            # Exibição das Estatísticas
-            st.subheader(f"Estatísticas Recentes dos Últimos 5 Jogos de {team1}")
+            # Estatísticas Recentes para Time 1
             recent_stats_team1 = get_recent_stats(team1, data)
+            st.write(f"Estatísticas dos últimos 5 jogos de {team1}:")
             st.write(recent_stats_team1)
             
-            st.subheader(f"Estatísticas Recentes dos Últimos 5 Jogos de {team2}")
+            # Estatísticas Recentes para Time 2
             recent_stats_team2 = get_recent_stats(team2, data)
+            st.write(f"Estatísticas dos últimos 5 jogos de {team2}:")
             st.write(recent_stats_team2)
             
-            plot_stats(team1, team2, home_away_stats, away_away_stats, avg_odds, odds_over_under, data)
+            # Estatísticas de Casa e Fora
+            stats_team1 = get_team_stats(team1, data)
+            stats_team2 = get_team_stats(team2, data)
+            avg_odds, odds_over_under = calculate_average_odds(data)
+            plot_stats(team1, team2, stats_team1, stats_team2, avg_odds, odds_over_under, data)
+
+    elif menu == "Análise de Sentimentos":
+        st.subheader("Análise de Sentimentos")
+
+        # Exemplo de análise de sentimentos para um texto
+        text = st.text_area("Digite o texto para análise de sentimentos:")
+        if text:
+            analysis = TextBlob(text)
+            st.write(f"Análise de Sentimentos: {analysis.sentiment}")
+
+    elif menu == "Previsão de Partidas":
+        st.subheader("Previsão de Partidas")
+        # Implemente a previsão de partidas aqui
 
 if __name__ == "__main__":
     main()
