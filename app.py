@@ -2,7 +2,7 @@ import pandas as pd
 import streamlit as st
 import plotly.express as px
 import plotly.graph_objects as go
-
+from textblob import TextBlob
 # Constants
 TEST_SIZE = 0.3
 RANDOM_STATE = 42
